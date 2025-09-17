@@ -80,29 +80,9 @@ RUN mkdir -p ckpts/
 # Install huggingface_hub for model downloads
 RUN pip3 install --no-cache-dir huggingface_hub
 
-# Download SeedVR2-7B model only
-RUN python3 -c "
-from huggingface_hub import snapshot_download
-import os
-
-print('Downloading SeedVR2-7B model...')
-snapshot_download(
-    repo_id='ByteDance-Seed/SeedVR2-7B',
-    local_dir='./ckpts/',
-    cache_dir='./cache/',
-    local_dir_use_symlinks=False,
-    resume_download=True,
-    allow_patterns=['*.pth', '*.safetensors', '*.json', '*.txt', '*.md'],
-    ignore_patterns=['*.bin', '*.onnx']
-)
-
-print('SeedVR2-7B model download completed!')
-print('Downloaded files:')
-import os
-for root, dirs, files in os.walk('./ckpts/'):
-    for file in files:
-        print(f'  {os.path.join(root, file)}')
-"
+# Download SeedVR2-7B model
+COPY download_models.py ./
+RUN python3 download_models.py
 
 # Generate text embeddings using the SeedVR text encoder
 COPY generate_embeddings.py ./
