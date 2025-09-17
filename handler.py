@@ -28,7 +28,7 @@ class SeedVRManager:
         self.initialized = False
         self.temp_dir = None
         
-    def initialize_model(self, model_type="seedvr2_7b", sp_size=1):
+    def initialize_model(self, model_type="seedvr2_7b", model_variant="normal", sp_size=1):
         """Initialize SeedVR model for serverless inference"""
         try:
             print(f"Initializing {model_type} model...")
@@ -65,10 +65,17 @@ class SeedVRManager:
             if sp_size > 1:
                 init_sequence_parallel(sp_size)
             
-            # Load configuration for 7B model
+            # Load configuration for 7B model with variant support
             if model_type.startswith("seedvr2_7b"):
                 config_path = './configs_7b/main.yaml'
-                checkpoint_path = './ckpts/seedvr2_ema_7b.pth'
+                
+                # Select checkpoint based on variant
+                if model_variant == "sharp":
+                    checkpoint_path = './ckpts/seedvr2_ema_7b_sharp.pth'
+                    print(f"Using SHARP variant for enhanced detail")
+                else:
+                    checkpoint_path = './ckpts/seedvr2_ema_7b.pth'
+                    print(f"Using NORMAL variant")
             else:
                 # Default to 7B model
                 print(f"Unknown model type {model_type}, defaulting to seedvr2_7b")
@@ -98,10 +105,11 @@ class SeedVRManager:
             self.runner.configure_diffusion()
             
             self.model_type = model_type
+            self.model_variant = model_variant
             self.sp_size = sp_size
             self.initialized = True
             
-            print(f"✅ {model_type} model initialized successfully")
+            print(f"✅ {model_type} ({model_variant}) model initialized successfully")
             return True
             
         except Exception as e:
@@ -332,6 +340,7 @@ class SeedVRManager:
                     "media": restored_media,
                     "media_type": media_type,
                     "model_type": self.model_type,
+                    "model_variant": self.model_variant,
                     "resolution": f"{res_h}x{res_w}",
                     "processing_info": {
                         "seed": seed,
@@ -362,14 +371,16 @@ def handler(job):
         if action == "initialize":
             # Initialize model
             model_type = job_input.get("model_type", "seedvr2_7b")
+            model_variant = job_input.get("model_variant", "normal")  # "normal" or "sharp"
             sp_size = job_input.get("sp_size", 1)
             
-            success = seedvr_manager.initialize_model(model_type, sp_size)
+            success = seedvr_manager.initialize_model(model_type, model_variant, sp_size)
             
             if success:
                 return {
-                    "message": f"Model {model_type} initialized successfully",
+                    "message": f"Model {model_type} ({model_variant}) initialized successfully",
                     "model_type": model_type,
+                    "model_variant": model_variant,
                     "sp_size": sp_size,
                     "ready": True
                 }
@@ -382,8 +393,9 @@ def handler(job):
                 # Auto-initialize with default settings
                 print("Auto-initializing model...")
                 model_type = job_input.get("model_type", "seedvr2_7b")
+                model_variant = job_input.get("model_variant", "normal")
                 sp_size = job_input.get("sp_size", 1)
-                success = seedvr_manager.initialize_model(model_type, sp_size)
+                success = seedvr_manager.initialize_model(model_type, model_variant, sp_size)
                 if not success:
                     return {"error": "Failed to initialize model"}
             
@@ -430,6 +442,7 @@ def handler(job):
                 "status": "healthy",
                 "model_initialized": seedvr_manager.initialized,
                 "model_type": getattr(seedvr_manager, 'model_type', None),
+                "model_variant": getattr(seedvr_manager, 'model_variant', None),
                 "cuda_available": torch.cuda.is_available(),
                 "gpu_memory": torch.cuda.get_device_properties(0).total_memory if torch.cuda.is_available() else None
             }

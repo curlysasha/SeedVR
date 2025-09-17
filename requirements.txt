@@ -2,7 +2,7 @@
 einops==0.7.0                   # Tensor operations
 
 # Training
-torch==2.3.0                    # Torch
+torch==2.3.0+cu121              # Torch (CUDA 12.1 build)
 omegaconf==2.3.0                # Configuration system.
 
 # Dataloading
@@ -12,7 +12,7 @@ opencv-python==4.9.0.80         # OpenCV
 diffusers==0.29.1               # Diffusers
 rotary-embedding-torch==0.5.3   # Rotary positional embedding
 transformers==4.38.2            # Transformers
-torchvision==0.18.0             # Torchvision
+torchvision==0.18.0+cu121       # Torchvision (CUDA 12.1 build)
 
 # Notebook
 mediapy==1.2.0                  # Notebook Visualization

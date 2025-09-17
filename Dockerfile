@@ -36,7 +36,7 @@ RUN git clone https://github.com/bytedance-seed/SeedVR.git . && \
 
 # Install PyTorch with CUDA support (heaviest, keep first for caching)
 RUN pip3 install --no-cache-dir \
-    torch==2.4.0+cu121 torchvision==0.19.0+cu121 torchaudio==2.4.0+cu121 \
+    torch==2.3.0+cu121 torchvision==0.18.0+cu121 torchaudio==2.3.0+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
 # Install huggingface_hub early for model downloads
@@ -44,7 +44,7 @@ RUN pip3 install --no-cache-dir huggingface_hub
 
 # Create model directory and download SeedVR2-7B model (EARLY in build for caching!)
 RUN mkdir -p ckpts/ && \
-    python3 -c "from huggingface_hub import snapshot_download; \
+    python3 -c "from huggingface_hub import snapshot_download; import shutil; \
     print('Downloading SeedVR2-7B model (~25GB)...'); \
     snapshot_download( \
         repo_id='ByteDance-Seed/SeedVR2-7B', \
@@ -55,29 +55,29 @@ RUN mkdir -p ckpts/ && \
         allow_patterns=['*.pth', '*.safetensors', '*.json', '*.txt', '*.md'], \
         ignore_patterns=['*.bin', '*.onnx'] \
     ); \
+    shutil.rmtree('./cache/', ignore_errors=True); \
     print('Model download completed!')"
 
 # Install requirements.txt dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu121 -r requirements.txt
 
 # Install additional packages required for SeedVR in ONE layer (for optimal caching)
 RUN pip3 install --no-cache-dir \
     # RunPod SDK
-    runpod \
+    runpod==1.6.2 \
     # Additional video/image processing
-    opencv-python==4.9.0.80 \
-    opencv-contrib-python \
-    imageio imageio-ffmpeg \
+    opencv-contrib-python==4.9.0.80 \
+    imageio==2.34.0 imageio-ffmpeg==0.5.1 \
     # ML packages
-    accelerate \
-    transformers \
-    diffusers \
+    accelerate==0.27.2 \
+    transformers==4.38.2 \
+    diffusers==0.29.1 \
     # Utility packages
-    omegaconf \
-    einops \
-    mediapy \
-    tqdm \
-    psutil
+    omegaconf==2.3.0 \
+    einops==0.7.0 \
+    mediapy==1.2.0 \
+    tqdm==4.66.2 \
+    psutil==5.9.8
 
 # Install flash attention (specific version for SeedVR)
 RUN pip3 install --no-cache-dir flash_attn==2.5.9.post1 --no-build-isolation

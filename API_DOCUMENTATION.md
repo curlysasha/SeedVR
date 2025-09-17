@@ -36,7 +36,8 @@ Explicitly initialize a specific model variant.
 {
   "input": {
     "action": "initialize",
-    "model_type": "seedvr2_3b",  // or "seedvr2_7b"
+    "model_type": "seedvr2_7b",
+    "model_variant": "normal",  // or "sharp" for enhanced detail
     "sp_size": 1  // sequence parallel size (1 for single GPU)
   }
 }
@@ -45,8 +46,9 @@ Explicitly initialize a specific model variant.
 **Response:**
 ```json
 {
-  "message": "Model seedvr2_3b initialized successfully",
-  "model_type": "seedvr2_3b",
+  "message": "Model seedvr2_7b (normal) initialized successfully",
+  "model_type": "seedvr2_7b",
+  "model_variant": "normal",
   "sp_size": 1,
   "ready": true
 }
@@ -69,6 +71,7 @@ Process video or image for restoration/enhancement.
     "cfg_rescale": 0.0,    // CFG rescale (default: 0.0)
     "sample_steps": 1,     // sampling steps (default: 1)
     "model_type": "seedvr2_7b",  // optional: auto-init if not initialized
+    "model_variant": "normal",   // optional: "normal" or "sharp" (default: "normal")
     "sp_size": 1           // optional: sequence parallel size
   }
 }
@@ -84,6 +87,7 @@ Process video or image for restoration/enhancement.
   "videos": [...],  // Backward compatibility: same as "media"
   "media_type": "video",  // or "image" 
   "model_type": "seedvr2_7b",
+  "model_variant": "normal",  // or "sharp"
   "resolution": "1280x720",
   "processing_info": {
     "seed": 666,
@@ -96,17 +100,21 @@ Process video or image for restoration/enhancement.
 
 ## Model Variants
 
-### SeedVR2-3B
-- **Best for**: Fast processing, good quality
-- **Memory**: ~15-20GB VRAM
-- **Speed**: 30-60 seconds per video
-- **Checkpoint**: `seedvr2_ema_3b.pth`
+### SeedVR2-7B Model Variants
 
-### SeedVR2-7B  
-- **Best for**: Highest quality results
-- **Memory**: ~25-35GB VRAM
+#### Normal Variant
+- **Best for**: Balanced restoration with natural results
+- **Memory**: ~25-35GB VRAM  
 - **Speed**: 60-120 seconds per video
 - **Checkpoint**: `seedvr2_ema_7b.pth`
+- **Characteristics**: More conservative enhancement, preserves original characteristics
+
+#### Sharp Variant
+- **Best for**: Maximum detail and sharpness
+- **Memory**: ~25-35GB VRAM
+- **Speed**: 60-120 seconds per video  
+- **Checkpoint**: `seedvr2_ema_7b_sharp.pth`
+- **Characteristics**: Enhanced detail extraction, more aggressive sharpening
 
 ## Resolution Guidelines
 
