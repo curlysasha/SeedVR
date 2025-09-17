@@ -52,22 +52,23 @@ Explicitly initialize a specific model variant.
 }
 ```
 
-### 3. Video Restoration
-Process video for restoration/enhancement.
+### 3. Media Restoration (Video/Image)
+Process video or image for restoration/enhancement.
 
 **Request:**
 ```json
 {
   "input": {
     "action": "restore",
-    "video": "base64_encoded_video_data",
-    "res_h": 1280,  // target height (default: 1280)
-    "res_w": 720,   // target width (default: 720)
-    "seed": 666,    // random seed (default: 666)
+    "media": "base64_encoded_media_data",  // or "video"/"image" for backward compatibility
+    "media_type": "auto",   // "auto", "video", "image" (default: "auto" - detects from data)
+    "res_h": 1280,         // target height (default: 1280)
+    "res_w": 720,          // target width (default: 720)
+    "seed": 666,           // random seed (default: 666)
     "cfg_scale": 1.0,      // CFG scale (default: 1.0 for one-step)
     "cfg_rescale": 0.0,    // CFG rescale (default: 0.0)
     "sample_steps": 1,     // sampling steps (default: 1)
-    "model_type": "seedvr2_3b",  // optional: auto-init if not initialized
+    "model_type": "seedvr2_7b",  // optional: auto-init if not initialized
     "sp_size": 1           // optional: sequence parallel size
   }
 }
@@ -77,11 +78,12 @@ Process video for restoration/enhancement.
 ```json
 {
   "success": true,
-  "videos": [
-    "base64_encoded_restored_video_1",
-    "base64_encoded_restored_video_2"
+  "media": [
+    "base64_encoded_restored_media_1"
   ],
-  "model_type": "seedvr2_3b",
+  "videos": [...],  // Backward compatibility: same as "media"
+  "media_type": "video",  // or "image" 
+  "model_type": "seedvr2_7b",
   "resolution": "1280x720",
   "processing_info": {
     "seed": 666,
@@ -147,7 +149,9 @@ Process video for restoration/enhancement.
 
 ## Usage Examples
 
-### Python Client Example
+### Python Client Examples
+
+#### Video Processing
 ```python
 import requests
 import base64
@@ -161,7 +165,8 @@ with open("input_video.mp4", "rb") as f:
 payload = {
     "input": {
         "action": "restore",
-        "video": video_b64,
+        "media": video_b64,
+        "media_type": "video",  # or "auto" for automatic detection
         "res_h": 1280,
         "res_w": 720,
         "seed": 42
@@ -177,13 +182,55 @@ response = requests.post(
 result = response.json()
 if result.get("success"):
     # Decode restored video
-    restored_video_b64 = result["videos"][0]
+    restored_video_b64 = result["media"][0]  # or result["videos"][0]
     restored_video_data = base64.b64decode(restored_video_b64)
     
     with open("restored_video.mp4", "wb") as f:
         f.write(restored_video_data)
     
     print("Video restored successfully!")
+else:
+    print(f"Error: {result.get('error')}")
+```
+
+#### Image Processing
+```python
+import requests
+import base64
+
+# Read image file
+with open("input_image.jpg", "rb") as f:
+    image_data = f.read()
+    image_b64 = base64.b64encode(image_data).decode('utf-8')
+
+# API request
+payload = {
+    "input": {
+        "action": "restore",
+        "media": image_b64,
+        "media_type": "image",  # explicitly set as image
+        "res_h": 1280,
+        "res_w": 720,
+        "seed": 42
+    }
+}
+
+response = requests.post(
+    "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
+    json=payload
+)
+
+result = response.json()
+if result.get("success"):
+    # Decode restored image
+    restored_image_b64 = result["media"][0]
+    restored_image_data = base64.b64decode(restored_image_b64)
+    
+    with open("restored_image.png", "wb") as f:
+        f.write(restored_image_data)
+    
+    print(f"Image restored successfully! Type: {result.get('media_type')}")
 else:
     print(f"Error: {result.get('error')}")
 ```

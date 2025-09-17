@@ -109,14 +109,15 @@ class SeedVRManager:
             traceback.print_exc()
             return False
     
-    def process_video(self, video_data: bytes, 
+    def process_media(self, media_data: bytes,
+                     media_type: str = "auto",  # "video", "image", or "auto"
                      res_h: int = 1280, 
                      res_w: int = 720,
                      seed: int = 666,
                      cfg_scale: float = 1.0,
                      cfg_rescale: float = 0.0,
                      sample_steps: int = 1) -> Dict[str, Any]:
-        """Process video for restoration"""
+        """Process video or image for restoration"""
         
         if not self.initialized:
             return {"error": "Model not initialized"}
@@ -129,12 +130,38 @@ class SeedVRManager:
                 os.makedirs(input_dir, exist_ok=True)
                 os.makedirs(output_dir, exist_ok=True)
                 
-                # Save input video
-                input_path = os.path.join(input_dir, "input_video.mp4")
-                with open(input_path, 'wb') as f:
-                    f.write(video_data)
+                # Detect media type if auto
+                if media_type == "auto":
+                    # Simple detection based on file signature
+                    if media_data[:4] == b'\xff\xd8\xff':
+                        media_type = "image"  # JPEG
+                    elif media_data[:8] == b'\x89PNG\r\n\x1a\n':
+                        media_type = "image"  # PNG
+                    elif b'ftypmp4' in media_data[:32] or b'ftypisom' in media_data[:32]:
+                        media_type = "video"  # MP4
+                    else:
+                        # Default to video for backward compatibility
+                        media_type = "video"
+                    print(f"Auto-detected media type: {media_type}")
                 
-                print(f"Processing video: {os.path.getsize(input_path)} bytes")
+                # Save input media
+                is_image = media_type == "image"
+                if is_image:
+                    # Try to detect image format
+                    if media_data[:4] == b'\xff\xd8\xff':
+                        ext = '.jpg'
+                    elif media_data[:8] == b'\x89PNG\r\n\x1a\n':
+                        ext = '.png'
+                    else:
+                        ext = '.jpg'  # default
+                    input_path = os.path.join(input_dir, f"input_image{ext}")
+                else:
+                    input_path = os.path.join(input_dir, "input_video.mp4")
+                
+                with open(input_path, 'wb') as f:
+                    f.write(media_data)
+                
+                print(f"Processing {media_type}: {os.path.getsize(input_path)} bytes")
                 
                 # Import necessary modules for processing
                 from einops import rearrange
@@ -175,9 +202,18 @@ class SeedVRManager:
                     Rearrange("t c h w -> c t h w"),
                 ])
                 
-                # Read and process video
-                video, _, _ = read_video(input_path, pts_unit='sec', output_format='TCHW')
-                video = video.float() / 255.0
+                # Read and process media
+                if is_image:
+                    # Read image
+                    image = read_image(input_path)
+                    # Convert to TCHW format (add time dimension)
+                    video = image.unsqueeze(0).float() / 255.0
+                    print(f"Image shape: {video.shape}")
+                else:
+                    # Read video
+                    video, _, _ = read_video(input_path, pts_unit='sec', output_format='TCHW')
+                    video = video.float() / 255.0
+                    print(f"Video shape: {video.shape}")
                 
                 # Apply transforms
                 video = video_transform(video)
@@ -258,8 +294,8 @@ class SeedVRManager:
                 ]
                 
                 # Decode and save
-                restored_videos = []
-                for sample in samples:
+                restored_media = []
+                for i, sample in enumerate(samples):
                     sample = torch.stack([sample], dim=0)
                     with torch.no_grad():
                         decode_result = self.runner.vae.decode(sample)
@@ -267,15 +303,24 @@ class SeedVRManager:
                         decode_result = (decode_result * 255.0).to(torch.uint8)
                         restore_result = rearrange(decode_result, "b c t h w -> b t h w c").cpu().numpy()
                     
-                    # Save video
-                    output_path = os.path.join(output_dir, f"restored_video_{len(restored_videos)}.mp4")
-                    mediapy.write_video(output_path, restore_result[0], fps=24)
+                    # Save media
+                    if is_image and restore_result.shape[1] == 1:
+                        # Save as image
+                        output_path = os.path.join(output_dir, f"restored_image_{i}.png")
+                        image_result = restore_result[0, 0]  # Remove batch and time dimensions
+                        mediapy.write_image(output_path, image_result)
+                        print(f"Saved image: {output_path}")
+                    else:
+                        # Save as video
+                        output_path = os.path.join(output_dir, f"restored_video_{i}.mp4")
+                        mediapy.write_video(output_path, restore_result[0], fps=24)
+                        print(f"Saved video: {output_path}")
                     
                     # Read and encode to base64
                     with open(output_path, 'rb') as f:
-                        video_bytes = f.read()
-                        video_b64 = base64.b64encode(video_bytes).decode('utf-8')
-                        restored_videos.append(video_b64)
+                        media_bytes = f.read()
+                        media_b64 = base64.b64encode(media_bytes).decode('utf-8')
+                        restored_media.append(media_b64)
                 
                 # Cleanup
                 del video_tensors, samples, cond_latents, noises, aug_noises
@@ -284,7 +329,8 @@ class SeedVRManager:
                 
                 return {
                     "success": True,
-                    "videos": restored_videos,
+                    "media": restored_media,
+                    "media_type": media_type,
                     "model_type": self.model_type,
                     "resolution": f"{res_h}x{res_w}",
                     "processing_info": {
@@ -331,7 +377,7 @@ def handler(job):
                 return {"error": "Failed to initialize model"}
         
         elif action == "restore":
-            # Process video restoration
+            # Process video/image restoration
             if not seedvr_manager.initialized:
                 # Auto-initialize with default settings
                 print("Auto-initializing model...")
@@ -341,17 +387,18 @@ def handler(job):
                 if not success:
                     return {"error": "Failed to initialize model"}
             
-            # Get video data
-            video_base64 = job_input.get("video")
-            if not video_base64:
-                return {"error": "No video data provided"}
+            # Get media data (support both old "video" and new "media" keys)
+            media_base64 = job_input.get("media") or job_input.get("video") or job_input.get("image")
+            if not media_base64:
+                return {"error": "No media data provided (use 'media', 'video', or 'image' key)"}
             
             try:
-                video_data = base64.b64decode(video_base64)
+                media_data = base64.b64decode(media_base64)
             except Exception as e:
-                return {"error": f"Invalid base64 video data: {str(e)}"}
+                return {"error": f"Invalid base64 media data: {str(e)}"}
             
             # Get processing parameters
+            media_type = job_input.get("media_type", "auto")  # "auto", "video", "image"
             res_h = job_input.get("res_h", 1280)
             res_w = job_input.get("res_w", 720)
             seed = job_input.get("seed", 666)
@@ -359,9 +406,10 @@ def handler(job):
             cfg_rescale = job_input.get("cfg_rescale", 0.0)
             sample_steps = job_input.get("sample_steps", 1)
             
-            # Process video
-            result = seedvr_manager.process_video(
-                video_data=video_data,
+            # Process media
+            result = seedvr_manager.process_media(
+                media_data=media_data,
+                media_type=media_type,
                 res_h=res_h,
                 res_w=res_w,
                 seed=seed,
@@ -369,6 +417,10 @@ def handler(job):
                 cfg_rescale=cfg_rescale,
                 sample_steps=sample_steps
             )
+            
+            # Add backward compatibility for video field
+            if result.get("success") and "media" in result:
+                result["videos"] = result["media"]  # For backward compatibility
             
             return result
             

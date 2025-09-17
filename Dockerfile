@@ -39,6 +39,24 @@ RUN pip3 install --no-cache-dir \
     torch==2.4.0+cu121 torchvision==0.19.0+cu121 torchaudio==2.4.0+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
+# Install huggingface_hub early for model downloads
+RUN pip3 install --no-cache-dir huggingface_hub
+
+# Create model directory and download SeedVR2-7B model (EARLY in build for caching!)
+RUN mkdir -p ckpts/ && \
+    python3 -c "from huggingface_hub import snapshot_download; \
+    print('Downloading SeedVR2-7B model (~25GB)...'); \
+    snapshot_download( \
+        repo_id='ByteDance-Seed/SeedVR2-7B', \
+        local_dir='./ckpts/', \
+        cache_dir='./cache/', \
+        local_dir_use_symlinks=False, \
+        resume_download=True, \
+        allow_patterns=['*.pth', '*.safetensors', '*.json', '*.txt', '*.md'], \
+        ignore_patterns=['*.bin', '*.onnx'] \
+    ); \
+    print('Model download completed!')"
+
 # Install requirements.txt dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
 
@@ -73,16 +91,6 @@ RUN pip3 install --no-cache-dir \
      --no-build-isolation --config-settings "--build-option=--cpp_ext" \
      --config-settings "--build-option=--cuda_ext" ./ && \
      cd .. && rm -rf apex)
-
-# Create necessary directories for models and embeddings
-RUN mkdir -p ckpts/
-
-# Install huggingface_hub for model downloads
-RUN pip3 install --no-cache-dir huggingface_hub
-
-# Download SeedVR2-7B model
-COPY download_models.py ./
-RUN python3 download_models.py
 
 # Generate text embeddings using the SeedVR text encoder
 COPY generate_embeddings.py ./
