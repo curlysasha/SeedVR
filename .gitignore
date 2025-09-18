@@ -24,3 +24,4 @@ __pycache__
 /test_videos
 /results
 /ckpts
+test_seedvr_endpoint.py

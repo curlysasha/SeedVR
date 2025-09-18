@@ -99,7 +99,7 @@ RUN python3 generate_embeddings.py
 # Copy the serverless handler
 COPY handler.py ./
 
-# Set environment variable for RunPod serverless mode
+# Set environment variable for RunPod serverless mode (DEFAULT)
 ENV RUNPOD_SERVERLESS=1
 
 # Health check script
@@ -118,8 +118,11 @@ CMD ["python3", "handler.py"]
 # Build instructions:
 # docker build -t seedvr-serverless .
 #
-# Local test:
-# docker run --gpus all -e RUNPOD_SERVERLESS=1 seedvr-serverless
+# Local test (serverless mode is DEFAULT):
+# docker run --gpus all seedvr-serverless
+# 
+# To enable distributed mode (for multi-GPU training):
+# docker run --gpus all -e RUNPOD_SERVERLESS=0 seedvr-serverless
 #
 # RunPod deployment:
 # 1. Push to Docker Hub: docker push username/seedvr-serverless:latest

@@ -3,13 +3,31 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-SeedVR is a state-of-the-art video restoration framework using Diffusion Transformers. The project includes two main models:
+SeedVR is a state-of-the-art video restoration framework using Diffusion Transformers configured **BY DEFAULT** for RunPod Serverless deployment. The project includes two main models:
 - **SeedVR**: Multi-step diffusion model for generic video restoration (CVPR 2025 Highlight)
-- **SeedVR2**: One-step video restoration via adversarial post-training
+- **SeedVR2**: One-step video restoration via adversarial post-training (DEPLOYED)
 
-This is a research codebase implementing large-scale diffusion transformers for video super-resolution, denoising, and restoration tasks.
+This is a production-ready codebase implementing large-scale diffusion transformers for video super-resolution, denoising, and restoration tasks with **zero-configuration RunPod serverless support**.
 
-## Essential Commands
+## 🚀 RunPod Serverless Deployment (DEFAULT MODE)
+
+### Quick Start
+```bash
+# Build and deploy (serverless mode enabled by default)
+docker build -t seedvr-serverless .
+docker push username/seedvr-serverless
+
+# Create RunPod endpoint with this image - ready to use!
+```
+
+### Key Benefits
+- ✅ **Zero Configuration**: No environment variables needed
+- ✅ **No MASTER_ADDR Errors**: Distributed training bypassed in serverless mode
+- ✅ **Fast Initialization**: Optimized for single-GPU inference
+- ✅ **Model Variants**: Support for normal and sharp SeedVR2-7B models
+- ✅ **Media Support**: Both video and image restoration
+
+## Essential Commands (Local Development)
 
 ### Environment Setup
 ```bash

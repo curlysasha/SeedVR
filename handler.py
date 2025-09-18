@@ -28,6 +28,17 @@ class SeedVRManager:
         self.initialized = False
         self.temp_dir = None
         
+    @staticmethod
+    def get_device():
+        """Get appropriate device - defaults to serverless mode"""
+        # Default to serverless mode unless explicitly disabled
+        if os.environ.get('RUNPOD_SERVERLESS', '1') == '1':
+            return 'cuda' if torch.cuda.is_available() else 'cpu'
+        else:
+            # Import here to avoid circular imports
+            from common.distributed import get_device
+            return get_device()
+        
     def initialize_model(self, model_type="seedvr2_7b", model_variant="normal", sp_size=1):
         """Initialize SeedVR model for serverless inference"""
         try:
@@ -45,25 +56,32 @@ class SeedVRManager:
             from data.image.transforms.na_resize import NaResize
             from data.video.transforms.rearrange import Rearrange
             
-            from common.distributed import (
-                get_device,
-                init_torch,
-            )
-            from common.distributed.advanced import (
-                get_data_parallel_rank,
-                get_data_parallel_world_size,
-                get_sequence_parallel_rank,
-                get_sequence_parallel_world_size,
-                init_sequence_parallel,
-            )
+            # Import distributed modules only when explicitly disabled serverless mode
+            if os.environ.get('RUNPOD_SERVERLESS', '1') != '1':
+                from common.distributed import (
+                    get_device,
+                    init_torch,
+                )
+                from common.distributed.advanced import (
+                    get_data_parallel_rank,
+                    get_data_parallel_world_size,
+                    get_sequence_parallel_rank,
+                    get_sequence_parallel_world_size,
+                    init_sequence_parallel,
+                )
             from projects.video_diffusion_sr.infer import VideoDiffusionInfer
             from common.config import load_config
-            from common.distributed.ops import sync_data
+            # Import sync_data only when explicitly disabled serverless mode
+            if os.environ.get('RUNPOD_SERVERLESS', '1') != '1':
+                from common.distributed.ops import sync_data
             from common.seed import set_seed
             
-            # Configure sequence parallel
-            if sp_size > 1:
+            # Configure sequence parallel only when explicitly disabled serverless mode
+            if sp_size > 1 and os.environ.get('RUNPOD_SERVERLESS', '1') != '1':
                 init_sequence_parallel(sp_size)
+            elif sp_size > 1:
+                print("⚠️ Sequence parallel disabled in serverless mode, using single GPU")
+                sp_size = 1
             
             # Load configuration for 7B model with variant support
             if model_type.startswith("seedvr2_7b"):
@@ -87,8 +105,20 @@ class SeedVRManager:
             self.runner = VideoDiffusionInfer(config)
             OmegaConf.set_readonly(self.runner.config, False)
             
-            # Initialize torch
-            init_torch(cudnn_benchmark=False, timeout=datetime.timedelta(seconds=3600))
+            # Initialize torch - default to serverless single-GPU mode
+            if os.environ.get('RUNPOD_SERVERLESS', '1') == '1':
+                # Serverless mode: simple CUDA setup without distributed
+                import torch.backends.cudnn as cudnn
+                cudnn.benchmark = False
+                if torch.cuda.is_available():
+                    torch.cuda.set_device(0)
+                    print(f"✅ CUDA initialized on device: {torch.cuda.current_device()}")
+                else:
+                    print("⚠️ CUDA not available, using CPU")
+            else:
+                # Full distributed setup for multi-node training
+                if 'init_torch' in locals():
+                    init_torch(cudnn_benchmark=False, timeout=datetime.timedelta(seconds=3600))
             
             # Configure models
             self.runner.configure_dit_model(device="cuda", checkpoint=checkpoint_path)
@@ -178,13 +208,24 @@ class SeedVRManager:
                 from data.image.transforms.divisible_crop import DivisibleCrop
                 from data.image.transforms.na_resize import NaResize
                 from data.video.transforms.rearrange import Rearrange
-                from common.distributed import get_device
-                from common.distributed.ops import sync_data
+                # Skip distributed imports in serverless mode (default) - not needed
+                if os.environ.get('RUNPOD_SERVERLESS', '1') != '1':
+                    from common.distributed.ops import sync_data
                 from common.seed import set_seed
                 from tqdm import tqdm
                 
-                # Set random seed
-                set_seed(seed, same_across_ranks=True)
+                # Set random seed - default to serverless mode
+                if os.environ.get('RUNPOD_SERVERLESS', '1') == '1':
+                    # Simple seed setting for serverless mode
+                    import random
+                    import numpy as np
+                    torch.manual_seed(seed)
+                    torch.cuda.manual_seed_all(seed)
+                    random.seed(seed)
+                    np.random.seed(seed)
+                    print(f"✅ Random seed set to {seed}")
+                else:
+                    set_seed(seed, same_across_ranks=True)
                 
                 # Update configuration
                 self.runner.config.diffusion.cfg.scale = cfg_scale
@@ -254,12 +295,16 @@ class SeedVRManager:
                 
                 # Generation step
                 def _move_to_cuda(x):
-                    return [i.to(get_device()) for i in x]
+                    device = self.get_device()
+                    return [i.to(device) for i in x]
                 
                 noises = [torch.randn_like(latent) for latent in cond_latents]
                 aug_noises = [torch.randn_like(latent) for latent in cond_latents]
                 
-                noises, aug_noises, cond_latents = sync_data((noises, aug_noises, cond_latents), 0)
+                # Sync data across processes (skip in serverless mode - default)
+                if os.environ.get('RUNPOD_SERVERLESS', '1') != '1':
+                    noises, aug_noises, cond_latents = sync_data((noises, aug_noises, cond_latents), 0)
+                # In serverless mode, data is already on the right device
                 noises, aug_noises, cond_latents = list(
                     map(lambda x: _move_to_cuda(x), (noises, aug_noises, cond_latents))
                 )
@@ -267,8 +312,9 @@ class SeedVRManager:
                 cond_noise_scale = 0.0
                 
                 def _add_noise(x, aug_noise):
-                    t = torch.tensor([1000.0], device=get_device()) * cond_noise_scale
-                    shape = torch.tensor(x.shape[1:], device=get_device())[None]
+                    device = self.get_device()
+                    t = torch.tensor([1000.0], device=device) * cond_noise_scale
+                    shape = torch.tensor(x.shape[1:], device=device)[None]
                     t = self.runner.timestep_transform(t, shape)
                     x = self.runner.schedule.forward(x, aug_noise, t)
                     return x
