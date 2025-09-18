@@ -25,3 +25,4 @@ __pycache__
 /results
 /ckpts
 test_seedvr_endpoint.py
+cloudbuild.yaml
