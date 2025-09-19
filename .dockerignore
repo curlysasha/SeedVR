@@ -11,6 +11,4 @@ __pycache__/
 .cache/
 ckpts/
 cache/
-pos_emb.pt
-neg_emb.pt
 trump.mp4

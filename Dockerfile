@@ -87,12 +87,11 @@ shutil.rmtree('./cache/', ignore_errors=True)
 print('Model download completed!')
 PY
 
-# Generate default text embeddings ahead of copying the rest of the repo
-COPY generate_embeddings.py ./
-RUN python3 generate_embeddings.py
-
 # Copy application code last so source edits do not bust dependency caches
 COPY . .
+
+# Ensure precomputed text embeddings are present
+RUN test -f pos_emb.pt && test -f neg_emb.pt
 
 # Serverless defaults
 ENV RUNPOD_SERVERLESS=1
