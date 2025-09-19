@@ -1,0 +1,16 @@
+.git
+.gitignore
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.swp
+*.swo
+.DS_Store
+.env
+.cache/
+ckpts/
+cache/
+pos_emb.pt
+neg_emb.pt
+trump.mp4

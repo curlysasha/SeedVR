@@ -1,27 +1,24 @@
-# SeedVR RunPod Serverless Dockerfile
+# SeedVR RunPod Serverless Dockerfile with improved caching
 FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
 
-# CRITICAL: Set non-interactive mode first to avoid prompts
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=UTC
-ENV PIP_ROOT_USER_ACTION=ignore
-ENV PYTHONUNBUFFERED=1
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+# Non-interactive setup and runtime defaults
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=UTC \
+    PIP_ROOT_USER_ACTION=ignore \
+    PYTHONUNBUFFERED=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# System dependencies (rarely change, keep early for caching)
 RUN apt-get update && apt-get install -y \
     python3.10 python3-pip python3-dev git wget curl \
-    # Graphics and video libraries
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev \
     libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 \
     libgstreamer-plugins-bad1.0-0 gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
     gstreamer1.0-plugins-ugly gstreamer1.0-libav \
-    # Build tools for compilation
     build-essential cmake pkg-config \
     libavcodec-dev libavformat-dev libswscale-dev \
     libv4l-dev libxvidcore-dev libx264-dev \
@@ -30,76 +27,74 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone SeedVR repository
-RUN git clone https://github.com/bytedance-seed/SeedVR.git . && \
-    git checkout main
+# Copy dependency manifests first so code changes keep cache hits
+COPY requirements.txt ./
 
-# Install PyTorch with CUDA support (heaviest, keep first for caching)
+# Core ML stack
 RUN pip3 install --no-cache-dir \
     torch==2.3.0+cu121 torchvision==0.18.0+cu121 torchaudio==2.3.0+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install huggingface_hub early for model downloads
+# Utilities required before copying the codebase
 RUN pip3 install --no-cache-dir huggingface_hub
 
-# Create model directory and download SeedVR2-7B model (EARLY in build for caching!)
-RUN mkdir -p ckpts/ && \
-    python3 -c "from huggingface_hub import snapshot_download; import shutil; \
-    print('Downloading SeedVR2-7B model (~25GB)...'); \
-    snapshot_download( \
-        repo_id='ByteDance-Seed/SeedVR2-7B', \
-        local_dir='./ckpts/', \
-        cache_dir='./cache/', \
-        local_dir_use_symlinks=False, \
-        resume_download=True, \
-        allow_patterns=['*.pth', '*.safetensors', '*.json', '*.txt', '*.md'], \
-        ignore_patterns=['*.bin', '*.onnx'] \
-    ); \
-    shutil.rmtree('./cache/', ignore_errors=True); \
-    print('Model download completed!')"
-
-# Install requirements.txt dependencies
-RUN pip3 install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu121 -r requirements.txt
-
-# Install additional packages required for SeedVR in ONE layer (for optimal caching)
+# Project dependencies from requirements (share PyTorch index for matching wheels)
 RUN pip3 install --no-cache-dir \
-    # RunPod SDK
+    --extra-index-url https://download.pytorch.org/whl/cu121 \
+    -r requirements.txt
+
+# Additional runtime packages that are not listed in requirements
+RUN pip3 install --no-cache-dir \
     runpod==1.6.2 \
-    # Additional video/image processing
     opencv-contrib-python==4.9.0.80 \
     imageio==2.34.0 imageio-ffmpeg==0.5.1 \
-    # ML packages
     accelerate==0.27.2 \
     transformers==4.38.2 \
     diffusers==0.29.1 \
-    # Utility packages
     omegaconf==2.3.0 \
     einops==0.7.0 \
     mediapy==1.2.0 \
     tqdm==4.66.2 \
     psutil==5.9.8
 
-# Install flash attention (specific version for SeedVR)
+# Flash attention and Apex (fallback compilation if wheel unavailable)
 RUN pip3 install --no-cache-dir flash_attn==2.5.9.post1 --no-build-isolation
-
-# Install apex - try pre-built wheel first, then compile
 RUN pip3 install --no-cache-dir \
     https://huggingface.co/ByteDance-Seed/SeedVR2-3B/resolve/main/apex-0.1-cp310-cp310-linux_x86_64.whl || \
     (git clone https://github.com/NVIDIA/apex && \
      cd apex && \
      pip3 install -v --disable-pip-version-check --no-cache-dir \
-     --no-build-isolation --config-settings "--build-option=--cpp_ext" \
-     --config-settings "--build-option=--cuda_ext" ./ && \
+       --no-build-isolation --config-settings "--build-option=--cpp_ext" \
+       --config-settings "--build-option=--cuda_ext" ./ && \
      cd .. && rm -rf apex)
 
-# Generate text embeddings using the SeedVR text encoder
+# Download model checkpoints once; cache layer unless this block changes
+RUN mkdir -p ckpts/ && \
+    python3 - <<'PY'
+from huggingface_hub import snapshot_download
+import shutil
+print('Downloading SeedVR2-7B model (~25GB)...')
+snapshot_download(
+    repo_id='ByteDance-Seed/SeedVR2-7B',
+    local_dir='./ckpts/',
+    cache_dir='./cache/',
+    local_dir_use_symlinks=False,
+    resume_download=True,
+    allow_patterns=['*.pth', '*.safetensors', '*.json', '*.txt', '*.md'],
+    ignore_patterns=['*.bin', '*.onnx']
+)
+shutil.rmtree('./cache/', ignore_errors=True)
+print('Model download completed!')
+PY
+
+# Generate default text embeddings ahead of copying the rest of the repo
 COPY generate_embeddings.py ./
 RUN python3 generate_embeddings.py
 
-# Copy the serverless handler
-COPY handler.py ./
+# Copy application code last so source edits do not bust dependency caches
+COPY . .
 
-# Set environment variable for RunPod serverless mode (DEFAULT)
+# Serverless defaults
 ENV RUNPOD_SERVERLESS=1
 
 # Health check script
@@ -109,23 +104,9 @@ RUN echo '#!/bin/bash\npython3 -c "import torch; print(f\"CUDA Available: {torch
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD /health_check.sh
 
-# Expose port for health checks (not used in serverless mode)
 EXPOSE 8080
 
-# Set the command to run the serverless handler
 CMD ["python3", "handler.py"]
 
-# Build instructions:
-# docker build -t seedvr-serverless .
-#
-# Local test (serverless mode is DEFAULT):
-# docker run --gpus all seedvr-serverless
-# 
-# To enable distributed mode (for multi-GPU training):
-# docker run --gpus all -e RUNPOD_SERVERLESS=0 seedvr-serverless
-#
-# RunPod deployment:
-# 1. Push to Docker Hub: docker push username/seedvr-serverless:latest
-# 2. Create RunPod serverless endpoint with this image
-# 3. Set GPU type to H100 (recommended) or A100 
-# 4. Set timeout to 300-600 seconds for video processing
+# Build: docker build -t seedvr-serverless .
+# Run:   docker run --gpus all seedvr-serverless
