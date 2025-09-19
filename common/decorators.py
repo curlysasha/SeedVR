@@ -137,10 +137,10 @@ def log_runtime(func: Callable) -> Callable:
 
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
-        torch.distributed.barrier()
+        barrier_if_distributed()
         start = time.perf_counter()
         result = func(*args, **kwargs)
-        torch.distributed.barrier()
+        barrier_if_distributed()
         logger.info(f"Completed {func.__name__} in {time.perf_counter() - start:.3f} seconds.")
         return result
 
