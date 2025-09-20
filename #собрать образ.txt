@@ -1,0 +1,86 @@
+ФИНАЛ
+docker build --platform linux/amd64 -t curlysasha/seedvr:v1.0 . && docker push curlysasha/seedvr:v1.0
+
+
+
+# собрать ранпод!!!!
+docker build --platform linux/amd64 -t curlysasha/comfyui-cuda:latest .
+docker push curlysasha/comfyui-cuda:latest
+
+#собрать образ
+docker build -t comfyui-cuda:latest .
+
+#удалить старый образ
+docker image prune -f
+
+#остановить
+docker-compose down
+
+#список образов
+docker images -a
+
+#ЗАПУСК
+docker-compose up -d
+
+
+  Отличия:
+  - docker-compose up -d = detached mode (в фоне, логов не видно)
+  - docker-compose up = attached mode (видно все логи сразу)
+
+  Чтобы остановить: Ctrl+C (контейнер остановится)
+
+  Альтернатива - запустить в фоне и сразу подключиться к логам:
+  docker-compose up -d && docker-compose logs -f
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!
+🚀 Одна команда для build + push:
+
+  Простой вариант:
+
+  docker build --platform linux/amd64 -t curlysasha/comfyui-cuda:latest . && docker push
+  curlysasha/comfyui-cuda:latest
+
+  С версионным тегом:
+
+  docker build --platform linux/amd64 -t curlysasha/comfyui-cuda:v1.1 . && docker push
+  curlysasha/comfyui-cuda:v1.1
+
+  С обоими тегами (latest + version):
+
+  docker build --platform linux/amd64 -t curlysasha/comfyui-cuda:latest -t curlysasha/comfyui-cuda:v1.1 . &&
+   docker push curlysasha/comfyui-cuda:latest && docker push curlysasha/comfyui-cuda:v1.1
+
+
+########починка места
+
+ 95G Sep  6 20:16 /mnt/c/Users/user/AppData/Local/Docker/wsl/disk/docker_data.v
+
+ 1. Сначала остановите Docker Desktop:
+
+  # Из WSL выполните:
+  wsl.exe --shutdown
+
+  2. Откройте PowerShell от администратора и выполните:
+
+  # Сжатие Docker диска (95GB)
+  Optimize-VHD -Path "C:\Users\user\AppData\Local\Docker\wsl\disk\docker_data.vhdx" -Mode Full
+
+  # Сжатие основного WSL диска Ubuntu (28GB)
+  Optimize-VHD -Path "C:\Users\user\AppData\Local\Packages\CanonicalGroupLimited.Ubuntu_79rhkp1fndgsc\L
+  ocalState\ext4.vhdx" -Mode Full
+
+  3. Альтернативный метод через diskpart (если Optimize-VHD не работает):
+
+  # Запустите diskpart
+  diskpart
+
+  # В diskpart выполните:
+  select vdisk file="C:\Users\user\AppData\Local\Docker\wsl\disk\docker_data.vhdx"
+  attach vdisk readonly
+  compact vdisk
+  detach vdisk
+  exit
+
+  
