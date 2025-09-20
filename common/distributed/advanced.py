@@ -182,7 +182,9 @@ def get_sequence_parallel_global_ranks() -> List[int]:
     that the caller rank belongs to.
     """
     if _SEQUENCE_PARALLEL_GLOBAL_RANKS is None:
-        return [dist.get_rank()]
+        if dist.is_available() and dist.is_initialized():
+            return [dist.get_rank()]
+        return [0]
     return _SEQUENCE_PARALLEL_GLOBAL_RANKS
 
 
