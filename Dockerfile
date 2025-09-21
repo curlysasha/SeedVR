@@ -68,14 +68,10 @@ RUN pip3 install --no-cache-dir \
        --config-settings "--build-option=--cuda_ext" ./ && \
      cd .. && rm -rf apex)
 
-# Download model checkpoints once; cache layer unless this block changes
-RUN mkdir -p ckpts/ && \
-    python3 -c "from huggingface_hub import snapshot_download; import shutil; print('Downloading SeedVR2-7B model (~25GB)...'); snapshot_download(repo_id='ByteDance-Seed/SeedVR2-7B', local_dir='./ckpts/', cache_dir='./cache/', local_dir_use_symlinks=False, resume_download=True, allow_patterns=['*.pth', '*.safetensors', '*.json', '*.txt', '*.md'], ignore_patterns=['*.bin', '*.onnx']); shutil.rmtree('./cache/', ignore_errors=True); print('Model download completed!')"
-
-# Install PyAV after heavy model download so cache persists
+# Install PyAV (requires libs from apt layer above)
 RUN pip3 install --no-cache-dir av==11.0.0
 
-# Copy application code last so source edits do not bust dependency caches
+# Copy application code (including ckpts/ with pre-downloaded weights, if present) last
 COPY . .
 
 # Ensure precomputed text embeddings are present

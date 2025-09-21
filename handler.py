@@ -21,6 +21,11 @@ os.environ['RUNPOD_SERVERLESS'] = '1'
 
 import runpod
 
+try:
+    from huggingface_hub import snapshot_download
+except ImportError:  # pragma: no cover - fallback if package missing
+    snapshot_download = None
+
 
 class SeedVRManager:
     def __init__(self):
@@ -39,6 +44,35 @@ class SeedVRManager:
             from common.distributed import get_device
             return get_device()
         
+    def _ensure_checkpoint(self, checkpoint_path: str, repo_id: str = "ByteDance-Seed/SeedVR2-7B") -> Path:
+        """Ensure the requested checkpoint exists locally; download on demand."""
+        ckpt_path = Path(checkpoint_path)
+        if ckpt_path.exists():
+            return ckpt_path
+
+        if snapshot_download is None:
+            raise RuntimeError(
+                "huggingface_hub is required to auto-download checkpoints. "
+                "Please install it or provide the checkpoint manually."
+            )
+
+        ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+        target_pattern = ckpt_path.name
+        print(f"📥 Checkpoint {target_pattern} not found, downloading from {repo_id}...")
+        snapshot_download(
+            repo_id=repo_id,
+            local_dir=str(ckpt_path.parent),
+            allow_patterns=[target_pattern],
+            ignore_patterns=["*.bin", "*.onnx"],
+        )
+
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"Failed to download checkpoint: {ckpt_path}")
+
+        size_gb = ckpt_path.stat().st_size / 1024**3
+        print(f"✅ Downloaded {ckpt_path.name} ({size_gb:.2f} GB)")
+        return ckpt_path
+
     def initialize_model(self, model_type="seedvr2_7b", model_variant="normal", sp_size=1):
         """Initialize SeedVR model for serverless inference"""
         try:
@@ -120,6 +154,9 @@ class SeedVRManager:
                 if 'init_torch' in locals():
                     init_torch(cudnn_benchmark=False, timeout=datetime.timedelta(seconds=3600))
             
+            # Ensure required checkpoint is available; download lazily if needed
+            checkpoint_path = str(self._ensure_checkpoint(checkpoint_path))
+
             # Configure models
             self.runner.configure_dit_model(device="cuda", checkpoint=checkpoint_path)
             self.runner.configure_vae_model()

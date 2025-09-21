@@ -79,6 +79,12 @@ class InflatedCausalConv3d(Conv3d):
         padding=(0, 0, 0, 0, 0, 0),
         prev_cache=None,
     ):
+        target_dtype = self.weight.dtype
+        if x.dtype != target_dtype:
+            x = x.to(target_dtype)
+        if prev_cache is not None and prev_cache.dtype != target_dtype:
+            prev_cache = prev_cache.to(target_dtype)
+
         # Compatible with no limit.
         if math.isinf(self.memory_limit):
             if prev_cache is not None:
